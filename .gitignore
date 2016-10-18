@@ -19,5 +19,4 @@ logs/
 pcap/
 
 # Critical
-config.py
 failed_conns*
