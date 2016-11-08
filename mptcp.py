@@ -563,24 +563,11 @@ def process_trace(pcap_filepath, graph_dir_exp, stat_dir_exp, aggl_dir_exp, rtt_
     do_tcp_processing = False
     try:
         with co.cd(csv_tmp_dir):
+            # TODO uncomment here for xpl plots (attention, seulement MPTCP)
             # If segmentation faults, remove the -S option
             # cmd = ['mptcptrace', '-f', pcap_filepath, '-s', '-S', '-t', '5000', '-w', '0']
-            # if not light:
+            # if True:
             #     cmd += ['-G', '250', '-r', '2', '-F', '3', '-a']
-            # connections = process_mptcptrace_cmd(cmd, pcap_filepath)
-            #
-            # # Useful to count the number of reinjected bytes
-            # cmd = ['mptcptrace', '-f', pcap_filepath, '-s', '-a', '-t', '5000', '-w', '2']
-            # if not light:
-            #     cmd += ['-G', '250', '-r', '2', '-F', '3']
-            # devnull = open(os.devnull, 'w')
-            # if subprocess.call(cmd, stdout=devnull) != 0:
-            #     raise MPTCPTraceError("Error of mptcptrace with " + pcap_filepath)
-            # devnull.close()
-            #
-            # cmd = ['mptcptrace', '-f', pcap_filepath, '-r', '2', '-t', '5000', '-w', '2']
-            # if not light:
-            #     cmd += ['-G', '250', '-r', '2', '-F', '3']
             # devnull = open(os.devnull, 'w')
             # if subprocess.call(cmd, stdout=devnull) != 0:
             #     raise MPTCPTraceError("Error of mptcptrace with " + pcap_filepath)

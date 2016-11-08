@@ -66,7 +66,7 @@ co.check_directory_exists(sums_dir_exp)
 ##################################################
 
 connections = cog.fetch_valid_data(stat_dir_exp, args)
-multiflow_connections, singleflow_connections = cog.get_multiflow_connections(connections)
+#multiflow_connections, singleflow_connections = cog.get_multiflow_connections(connections)
 
 ##################################################
 ##               PLOTTING RESULTS               ##
@@ -83,24 +83,29 @@ nb_bytes_port = {}
 for fname, conns in connections.iteritems():
     for conn_id, conn in conns.iteritems():
         nb_conns += 1
-        port = conn.flows[0].attr.get(co.SOCKS_PORT, conn.attr.get(co.SOCKS_PORT, None))
-        if port and port not in nb_conns_port:
-            nb_conns_port[port] = 1
-            nb_bytes_port[port] = 0
-        elif port:
-            nb_conns_port[port] += 1
+        #port = conn.flows[0].attr.get(co.SOCKS_PORT, conn.attr.get(co.SOCKS_PORT, None))
+        #if port and port not in nb_conns_port:
+            #nb_conns_port[port] = 1
+            #nb_bytes_port[port] = 0
+        #elif port:
+            #nb_conns_port[port] += 1
         for direction in co.DIRECTIONS:
-            if conn.attr[direction][co.BYTES_MPTCPTRACE] > 1000000000:
-                print("MPTCP", fname, conn_id, direction, conn.attr[direction][co.BYTES_MPTCPTRACE])
-            nb_bytes += conn.attr[direction][co.BYTES_MPTCPTRACE]
-            for flow_id, flow in conn.flows.iteritems():
-                nb_packets += flow.attr[direction].get(co.PACKS, 0)
-                if flow.attr[direction].get(co.BYTES_DATA, 0) > 1000000000:
-                    print("TCP", fname, conn_id, flow_id, direction, flow.attr[direction].get(co.BYTES_DATA, 0))
-                nb_bytes_tcp += flow.attr[direction].get(co.BYTES_DATA, 0)
-                nb_bytes_tcp_dir[direction] += flow.attr[direction].get(co.BYTES_DATA, 0)
-                if port is not None:
-                    nb_bytes_port[port] += flow.attr[direction].get(co.BYTES_DATA, 0)
+            if isinstance(conn, mptcp.MPTCPConnection):
+                if conn.attr[direction][co.BYTES_MPTCPTRACE] > 1000000000:
+                    print("MPTCP", fname, conn_id, direction, conn.attr[direction][co.BYTES_MPTCPTRACE])
+                nb_bytes += conn.attr[direction][co.BYTES_MPTCPTRACE]
+                for flow_id, flow in conn.flows.iteritems():
+                    nb_packets += flow.attr[direction].get(co.PACKS, 0)
+                    if flow.attr[direction].get(co.BYTES_DATA, 0) > 1000000000:
+                        print("TCP", fname, conn_id, flow_id, direction, flow.attr[direction].get(co.BYTES_DATA, 0))
+                    nb_bytes_tcp += flow.attr[direction].get(co.BYTES_DATA, 0)
+                    nb_bytes_tcp_dir[direction] += flow.attr[direction].get(co.BYTES_DATA, 0)
+                    if port is not None:
+                        nb_bytes_port[port] += flow.attr[direction].get(co.BYTES_DATA, 0)
+            elif isinstance(conn, tcp.TCPConnection):
+                nb_packets += conn.flow.attr[direction].get(co.PACKS, 0)
+                nb_bytes_tcp += conn.flow.attr[direction].get(co.BYTES_DATA, 0)
+                nb_bytes_tcp_dir[direction] += conn.flow.attr[direction].get(co.BYTES_DATA, 0)
 
 print("TRACE 0")
 print("NB CONNS", nb_conns)
@@ -111,6 +116,8 @@ print("NB BYTES DIR", nb_bytes_tcp_dir)
 print("PORT CONN", nb_conns_port)
 print("PORT BYTES", nb_bytes_port)
 
+import sys
+sys.exit(0)
 
 nb_conns = 0
 nb_packets = 0
