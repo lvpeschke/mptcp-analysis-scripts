@@ -60,6 +60,7 @@ args = parser.parse_args()
 stat_dir_exp = os.path.abspath(os.path.join(ROOT_DIR, args.stat))
 sums_dir_exp = os.path.abspath(os.path.join(ROOT_DIR, args.sums))
 co.check_directory_exists(sums_dir_exp)
+print('-s dir is', args.stat, 'and -S dir is', args.sums)
 
 ##################################################
 ##                 GET THE DATA                 ##
@@ -105,7 +106,7 @@ for fname, conns in multiflow_connections.iteritems():
                 if len(conn.attr[direction][co.BURSTS]) == 0:
                     continue
 
-                pkts_bytes = [x[1] % 2**32 for x in conn.attr[direction][co.BURSTS]]
+                pkts_bytes = [x[1] % 2**32 for x in conn.attr[direction][co.BURSTS]] # TODO BURTS[4] = time arrival
                 pkts = [x[2] % 2**32 for x in conn.attr[direction][co.BURSTS]]
                 if conn_bytes < 10000:
                     label = TINY
@@ -137,7 +138,7 @@ for direction in co.DIRECTIONS:
         sorted_array = np.sort(sample)
         yvals = np.arange(len(sorted_array)) / float(len(sorted_array))
         more_than_100 = [x for x in sorted_array if x >= 100]
-        print(direction, label, len(more_than_100), len(more_than_100) * 100.0 / len(sorted_array))
+        # print(direction, label, len(more_than_100), len(more_than_100) * 100.0 / len(sorted_array))
 
         if len(sorted_array) > 0:
             # Add a last point
