@@ -60,6 +60,7 @@ args = parser.parse_args()
 stat_dir_exp = os.path.abspath(os.path.join(ROOT_DIR, args.stat))
 sums_dir_exp = os.path.abspath(os.path.join(ROOT_DIR, args.sums))
 co.check_directory_exists(sums_dir_exp)
+print('-s dir is', args.stat, 'and -S dir is', args.sums)
 
 ##################################################
 ##                 GET THE DATA                 ##
@@ -89,7 +90,7 @@ for fname, conns in multiflow_connections.iteritems():
             conn_start_time = conn.attr[co.START].total_seconds()
             conn_start_time_int = long(conn_start_time)
             conn_start_time_dec = float('0.' + str(conn_start_time - conn_start_time_int).split('.')[1])
-            conn_duration = flaot(conn.attr[co.DURATION])
+            conn_duration = float(conn.attr[co.DURATION])
             if conn_duration < min_duration:
                 continue
 

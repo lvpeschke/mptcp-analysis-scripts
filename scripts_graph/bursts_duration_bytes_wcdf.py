@@ -60,6 +60,7 @@ args = parser.parse_args()
 stat_dir_exp = os.path.abspath(os.path.join(ROOT_DIR, args.stat))
 sums_dir_exp = os.path.abspath(os.path.join(ROOT_DIR, args.sums))
 co.check_directory_exists(sums_dir_exp)
+print('-s dir is', args.stat, 'and -S dir is', args.sums)
 
 ##################################################
 ##                 GET THE DATA                 ##
