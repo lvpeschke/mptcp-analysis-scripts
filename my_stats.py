@@ -2,7 +2,6 @@
 from __future__ import print_function
 
 import argparse
-import os
 import pickle
 import sys
 
@@ -18,6 +17,24 @@ import tcp
 # pandas print options
 pd.options.display.precision = 4
 line = '--------------------------------------------------'
+
+H_LINK = 'link'
+H_RATIO = 'ratio'
+H_MBPS = '(Mbps)'
+H_MS = '(ms)'
+
+H_TRAFFIC_MB = 'traffic (MB)'
+H_UNIQUE_TRAFFIC_MB = 'unique traffic (MB)'
+H_RETRANS_MB = 'retransmissions (MB)'
+H_REINJ_MB = 'reinjections (MB)'
+H_TRAFFIC_PERC = 'traffic (% of total)'
+H_TRAFFIC_PKTS = 'traffic (pkts)' # extra
+H_RETRANS_PKTS = 'retransmissions (pkts)'
+H_REINJ_PKTS = 'reinjections (pkts)'
+H_RTO_PKTS = 'RTO (pkts)'
+H_UNNEC_RTO_PKTS = 'unnecessary RTO (pkts)'
+
+H_SEG_PERF = 'segment performance (s/s)'
 
 
 def values_per_flows(connection, nb_flows, direction, value, adjust=1):
@@ -75,11 +92,6 @@ def sum_values_per_flows(connections, nb_flows, direction, value, adjust=1):
     ret = [r * adjust for r in ret]
     return ret
 
-# def get_sum_values_for_all_conns(connections, direction, value):
-#     assert direction == co.S2C or direction == co.C2S
-#
-#     return sum(conn.attr[direction][value] for conn in connections)
-
 
 def find_max_duration_connection(connections):
     maxi = -1
@@ -99,128 +111,118 @@ def find_max_duration_connection(connections):
     return idxi, maxi
 
 
-def main(infile):
+def main(infile, total_bandwidth, ratio, delays):
     with open(infile, 'r') as f:
         content = pickle.load(f)
         # print('infile is', infile)
         if type(content) is dict:
-            # and (all(type(e) is mptcp.MPTCPConnection for e in content.values()) or
-            #                               all(type(e) is tcp.TCPConnection for e in content.values())):
-            # for e in content:
-            #     print(type(e))
-            n = len(content)
-            if all(type(e) is mptcp.MPTCPConnection for e in content.values()):
+            n = len(content)  # number of connections
+            # mpd_conn = None  # (idx, duration) of the connection fetching the MPD
+            # video_content = None  # connection / dict of connections carrying the video traffic
+            # get_values = None  # function to retrieve aggregate values for the video session
+            # m = None  # True if MPTCP, False if TCP
+            # nb_flows = None  # number of flows (= number of links in use)
+            total_MB = None  # total video traffic (MB)
+            print('content has {} entries'.format(n))
+
+            if n == 2:  # MPD connection (idx 1) + video connection (idx 2)
+                mpd_conn = (1, '?')
+                video_content = content[n]
+                get_values = values_per_flows
+            elif n > 2:  # MPD connection (idx to be found) + many video connections (all other idxs)
+                mpd_conn = find_max_duration_connection(content)
+                video_content = dict(content)  # copy the original
+                del video_content[mpd_conn[0]]  # delete mpd connection
+                print('video_content has {} entries'.format(len(video_content)))
+                get_values = sum_values_per_flows
+            else:
+                raise ValueError('{} connections'.format(n))
+
+            if all(type(e) is mptcp.MPTCPConnection for e in content.values()):  # pure MPTCP
                 m = True
                 nb_flows = 2
-            elif all(type(e) is tcp.TCPConnection for e in content.values()):
+                if n == 2:
+                    total_MB = float(content[n].attr[co.S2C][co.BYTES_MPTCPTRACE] * 10 ** (-6))
+                else:
+                    total_MB = float(sum(conn.attr[co.S2C][co.BYTES_MPTCPTRACE]
+                                         for conn in video_content.values()) * 10 ** (-6))
+            elif all(type(e) is tcp.TCPConnection for e in content.values()):  # pure TCP
                 m = False
                 nb_flows = 1
             else:
                 raise TypeError('Not all TCPConnection, nor all MPTCPConnection.')
 
-            if n == 2:  # MPD connection (idx 1) + video connection (idx 2)
-                print('content has {} entries'.format(len(content)))
-                # print(content)
-                # print(content[n].attr.keys())
-                # print(content[2].flows[0].attr[co.S2C].keys())
-                data = pd.DataFrame(
-                        {# 'file name': [os.path.basename(infile)] * nb_flows,
-                            'conn nb': [n] * nb_flows,
+            data = pd.DataFrame(
+                    {
+                        'conns': [n - 1] * nb_flows,
+                        'conn mpd': [mpd_conn] * nb_flows,
 
-                            # per flow
-                            'S2C MB data':
-                                values_per_flows(content[n], nb_flows, co.S2C, co.BYTES_DATA, 10 ** (-6)), # = total
-                            'S2C MB unique':
-                                values_per_flows(content[n], nb_flows, co.S2C, co.BYTES, 10 ** (-6)), # = unique
-                            'S2C MB retrans':
-                                values_per_flows(content[n], nb_flows, co.S2C, co.BYTES_RETRANS, 10 ** (-6)),
-                            'S2C MB data/total %':
-                                np.divide(values_per_flows(content[n], nb_flows, co.S2C, co.BYTES_DATA, 10 ** (-6)),
-                                          float(content[n].attr[co.S2C][co.BYTES_MPTCPTRACE] * 10 ** (-6) / 100)) if m
-                                else [100.0] * nb_flows,
+                        # per flow
+                        H_TRAFFIC_MB:
+                            get_values(video_content, nb_flows, co.S2C, co.BYTES_DATA, 10 ** (-6)), # = total
+                        H_UNIQUE_TRAFFIC_MB:
+                            get_values(video_content, nb_flows, co.S2C, co.BYTES, 10 ** (-6)), # = unique
+                        H_RETRANS_MB:
+                            get_values(video_content, nb_flows, co.S2C, co.BYTES_RETRANS, 10 ** (-6)),
+                        H_TRAFFIC_PERC:
+                            np.divide(get_values(video_content, nb_flows, co.S2C, co.BYTES_DATA, 10 ** (-6)),
+                                      total_MB / 100) if m and total_MB is not None
+                            else [100.0] * nb_flows,
 
-                            # = flow total / connection total
-                            'S2C pkts data':
-                                values_per_flows(content[n], nb_flows, co.S2C, co.PACKS),
-                            'S2C pkts retrans':
-                                values_per_flows(content[n], nb_flows, co.S2C, co.PACKS_RETRANS),
-                            'S2C pkts RTO':
-                                values_per_flows(content[n], nb_flows, co.S2C, co.NB_RTX_RTO),
-                            'S2C pkts RTO unn':
-                                values_per_flows(content[n], nb_flows, co.S2C, co.NB_UNNECE_RTX_RTO),
+                        # = flow total / connection total
+                        H_TRAFFIC_PKTS:
+                            get_values(video_content, nb_flows, co.S2C, co.PACKS),
+                        H_RETRANS_PKTS:
+                            get_values(video_content, nb_flows, co.S2C, co.PACKS_RETRANS),
+                        H_RTO_PKTS:
+                            get_values(video_content, nb_flows, co.S2C, co.NB_RTX_RTO),
+                        H_UNNEC_RTO_PKTS:
+                            get_values(video_content, nb_flows, co.S2C, co.NB_UNNECE_RTX_RTO),
 
-                            # mptcp
-                            'S2C MB reinj':
-                                values_per_flows(content[n], nb_flows, co.S2C, co.REINJ_ORIG_BYTES, 10 ** (-6)) if m
-                                else ['tcp'] * nb_flows,
-                            'S2C pkts reinj':
-                                values_per_flows(content[n], nb_flows, co.S2C, co.REINJ_ORIG_PACKS) if m
-                                else ['tcp'] * nb_flows,
+                        # mptcp
+                        H_REINJ_MB:
+                            get_values(video_content, nb_flows, co.S2C, co.REINJ_ORIG_BYTES, 10 ** (-6)) if m
+                            else [''] * nb_flows,
+                        H_REINJ_PKTS:
+                            get_values(video_content, nb_flows, co.S2C, co.REINJ_ORIG_PACKS) if m
+                            else [''] * nb_flows,
 
-                            # whole connection
-                            # 'S2C bytes mptcptrace': ([None] * n).append(content[2].attr[co.S2C][co.BYTES_MPTCPTRACE]),
-                            # 'S2C retrans_dss': ([None] * n).append(content[2].attr[co.S2C][co.RETRANS_DSS]),
-                            # 'S2C reinj_bytes': ([None] * n).append(content[2].attr[co.S2C][co.REINJ_BYTES]),
-                            # 'S2C reinj_pc': ([None] * n).append(content[2].attr[co.S2C][co.REINJ_PC]),
+                        # for LaTeX
+                        H_LINK: ['link 1', 'link 2'] if m else ['link 1'],
+                        H_RATIO: [ratio, 1.0 - ratio] if m else [1],
+                        H_MBPS: [ratio * total_bandwidth, (1 - ratio) * total_bandwidth] if m else [total_bandwidth],
+                        H_MS: delays,
+                        H_SEG_PERF: [''] * nb_flows,
 
-                        }, index=[range(1, nb_flows + 1)])
+                        # whole connection
+                        # 'S2C bytes mptcptrace': ([None] * n).append(content[2].attr[co.S2C][co.BYTES_MPTCPTRACE]),
+                        # 'S2C retrans_dss': ([None] * n).append(content[2].attr[co.S2C][co.RETRANS_DSS]),
+                        # 'S2C reinj_bytes': ([None] * n).append(content[2].attr[co.S2C][co.REINJ_BYTES]),
+                        # 'S2C reinj_pc': ([None] * n).append(content[2].attr[co.S2C][co.REINJ_PC]),
 
-                print('\n* Data from', os.path.basename(infile), ':\n', line, '\n', data, '\n', line, '\n')
+                    }, index=[range(1, nb_flows + 1)])
 
-            elif n > 2:  # MPD connection + many video connections
-                print('content has {} entries'.format(len(content)))
-                mpd_conn_idx = find_max_duration_connection(content)
-                video_content = dict(content)  # copy the original
-                del video_content[mpd_conn_idx[0]]  # delete mpd connection
-                print('video_content has {} entries'.format(len(video_content)))
-                # if m:
-                #   total_bytes = float(sum(conn.attr[co.S2C][co.BYTES_MPTCPTRACE] for conn in video_content.values()))
-                # else:
-                #   total_bytes = float(sum(conn.flow.attr[co.S2C][co.BYTES_DATA] for conn in video_content.values()))
+            # print('\n* Data from', os.path.basename(infile), ':\n', line, '\n', data, '\n', line, '\n')
+            # print('the end')
+            # TODO header=False
+            # TODO formatters='TODO same len as columns'
+            # LaTeX
+            columns = [H_LINK, H_RATIO, H_MBPS, H_MS,
+                       H_TRAFFIC_MB, H_UNIQUE_TRAFFIC_MB, H_RETRANS_MB, H_REINJ_MB, H_TRAFFIC_PERC,
+                       H_RETRANS_PKTS, H_REINJ_PKTS, H_RTO_PKTS, H_UNNEC_RTO_PKTS, H_SEG_PERF]
+            column_format = 'lSSSSSSSSSSSSc'
+            assert len(columns) == len(column_format)
+            latex = data.to_latex(columns=columns, column_format=column_format, col_space=None,
+                                  header=True, index=False, index_names=False, bold_rows=False,
+                                  formatters=None, float_format=None, sparsify=None,
+                                  longtable=None, escape=True, encoding='utf-8',
+                                  na_rep='NaN', decimal='.')
 
-                data = pd.DataFrame(
-                        {# 'file name': [os.path.basename(infile)] * nb_flows,
-                            'conn nb': ['all video'] * nb_flows,
-                            'conns': [len(video_content)] * nb_flows,
-                            'conn mpd': [mpd_conn_idx] * nb_flows,
+            print(line)
+            print(latex)
+            print(line)
 
-                            # sums per flow
-                            'S2C MB data':
-                                sum_values_per_flows(video_content, nb_flows, co.S2C, co.BYTES_DATA, 10 ** (-6)), # = total
-                            'S2C MB unique':
-                                sum_values_per_flows(video_content, nb_flows, co.S2C, co.BYTES, 10 ** (-6)), # = unique
-                            'S2C MB retrans':
-                                sum_values_per_flows(video_content, nb_flows, co.S2C, co.BYTES_RETRANS, 10 ** (-6)),
-
-                            'S2C MB data/total %':
-                                np.divide(
-                                    sum_values_per_flows(video_content, nb_flows, co.S2C, co.BYTES_DATA, 10 ** (-6)),
-                                    float(sum(conn.attr[co.S2C][co.BYTES_MPTCPTRACE]
-                                              for conn in video_content.values())) * 10 ** (-6) / 100) if m
-                                else [100.0] * nb_flows,
-                            # = flow total / connection total
-                            'S2C packets':
-                                sum_values_per_flows(video_content, nb_flows, co.S2C, co.PACKS),
-                            'S2C pkts retrans':
-                                sum_values_per_flows(video_content, nb_flows, co.S2C, co.PACKS_RETRANS),
-                            'S2C RTO':
-                                sum_values_per_flows(video_content, nb_flows, co.S2C, co.NB_RTX_RTO),
-                            'S2C RTO unn':
-                                sum_values_per_flows(video_content, nb_flows, co.S2C, co.NB_UNNECE_RTX_RTO),
-
-                            # mptcp
-                            'S2C MB reinj':
-                                sum_values_per_flows(video_content, nb_flows, co.S2C, co.REINJ_ORIG_BYTES, 10 ** (-6)) if m
-                                else ['tcp'] * nb_flows,
-                            'S2C pkts reinj':
-                                sum_values_per_flows(video_content, nb_flows, co.S2C, co.REINJ_ORIG_PACKS) if m
-                                else ['tcp'] * nb_flows,
-
-                        }, index=[range(1, nb_flows + 1)])
-                print('\n* Data from', os.path.basename(infile), ':\n', line, '\n', data, '\n', line, '\n')
-
-            else:
-                raise ValueError('{} connections'.format(n))
+            return data
 
         else:
             raise TypeError('Not a dict.')
@@ -233,10 +235,24 @@ if __name__ == '__main__':
     parser.add_argument('infile',
                         type=str, # argparse.FileType('r'),
                         help='file name or path')
+    parser.add_argument('bandwidth',
+                        type=float,
+                        help='total configured bandwidth')
+    parser.add_argument('ratio',
+                        type=float,
+                        help='ratio')
+    parser.add_argument('delays',
+                        type=int,
+                        nargs='+',
+                        help='delay(s)')
     parser.add_argument('-v', '--version',
                         action='version',
                         version=__file__ + ' version 29 December 2016')
     args = parser.parse_args()
     print(__file__, 'arguments are...', str(args))
 
-    sys.exit(main(infile=args.infile))
+    assert args.bandwidth > 0
+    assert 0 < args.ratio <= 1
+    assert all(d > 0 for d in args.delays)
+
+    sys.exit(main(infile=args.infile, total_bandwidth=args.bandwidth, ratio=args.ratio, delays=args.delays))
