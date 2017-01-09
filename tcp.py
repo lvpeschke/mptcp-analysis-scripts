@@ -697,6 +697,7 @@ def process_first_syn(ts_delta, acks, nb_acks, connections, tcp, ip, saddr, dadd
         connections[conn_id].attr[co.BACKUP] = backup
 
 
+# TODO use as standalone
 def process_syn_ack(ts_delta, acks, nb_acks, connections, tcp, ip, saddr, daddr, sport, dport, black_list, inverse_conns, ts_syn_timeout, ts_timeout):
     """ Processing of SYN/ACKs seen on the connection """
     # The sender of the SYN/ACK is the server
@@ -720,6 +721,7 @@ def process_syn_ack(ts_delta, acks, nb_acks, connections, tcp, ip, saddr, daddr,
         acks[daddr, dport, saddr, sport][co.TIMESTAMP][SERVER] = ts_delta
 
 
+# TODO use as standalone
 def process_pkt_from_client(ts_delta, acks, nb_acks, connections, tcp, ip, saddr, daddr, sport, dport, fin_flag):
     """ Process a packet with ACK set from the client """
     if acks[saddr, sport, daddr, dport][co.S2C] >= 0:

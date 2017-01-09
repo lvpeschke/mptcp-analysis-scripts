@@ -12,10 +12,8 @@ import common as co
 import mptcp
 import tcp
 
-# import six
-
 # pandas print options
-pd.options.display.precision = 4
+pd.options.display.precision = 2
 line = '--------------------------------------------------'
 
 H_LINK = 'link'
@@ -60,10 +58,6 @@ def values_per_flows(connection, nb_flows, direction, value, adjust=1):
 
 def sum_values_per_flows(connections, nb_flows, direction, value, adjust=1):
     assert direction == co.S2C or direction == co.C2S
-    # print(type(connections))
-    # print(connections.keys())
-    # for conn, second in connections.iteritems():
-    #     print(type(conn), 'and', type(second))
 
     ret = [0] * nb_flows  # single flow if tcp
     if all(type(e) is tcp.TCPConnection for e in connections.values()):
@@ -75,7 +69,11 @@ def sum_values_per_flows(connections, nb_flows, direction, value, adjust=1):
 
     elif all(type(e) is mptcp.MPTCPConnection for e in connections.values()):
         if not all(len(conn.flows) == nb_flows for conn in connections.itervalues()):
-            raise ValueError('all MPTCP connections do not have the required amount of flows')
+            less_flow = []
+            for idx, conn in connections.iteritems():
+                if len(conn.flows) < nb_flows:
+                    less_flow.append((idx, len(conn.flows)))
+            print('Careful!', len(less_flow), 'conns with less subflows (val =', value, '):', str(less_flow))
 
         for idx, conn in connections.iteritems():
             # print('conn idx is:', idx)
@@ -88,49 +86,56 @@ def sum_values_per_flows(connections, nb_flows, direction, value, adjust=1):
     else:
         raise TypeError('Not all TCPConnection, nor all MPTCPConnection.')
 
-    # print('ret is', ret)
     ret = [r * adjust for r in ret]
     return ret
 
 
-def find_max_duration_connection(connections):
+def find_max_attr_connection(connections, attr=co.DURATION):
     maxi = -1
     idxi = -1
     for idx, conn in connections.iteritems():
         # print(conn.attr.keys())
-        if type(conn) is mptcp.MPTCPConnection and conn.attr[co.DURATION] > maxi:
-            maxi = conn.attr[co.DURATION]
+        if type(conn) is mptcp.MPTCPConnection and conn.attr[attr] > maxi:
+            maxi = conn.attr[attr]
             idxi = idx
             if maxi > (300 - 1):
-                print('duration of MPTCP conn {} is {}'.format(idxi, maxi))
-        elif type(conn) is tcp.TCPConnection and conn.flow.attr[co.DURATION] > maxi:
-            maxi = conn.flow.attr[co.DURATION]
+                print('{} of MPTCP conn {} is {}'.format(attr, idxi, maxi))
+        elif type(conn) is tcp.TCPConnection and conn.flow.attr[attr] > maxi:
+            maxi = conn.flow.attr[attr]
             idxi = idx
             if maxi > (300 - 1):
-                print('duration of TCP conn {} is {}'.format(idxi, maxi))
+                print('{} of TCP conn {} is {}'.format(attr, idxi, maxi))
     return idxi, maxi
 
 
 def main(infile, total_bandwidth, ratio, delays):
     with open(infile, 'r') as f:
         content = pickle.load(f)
-        # print('infile is', infile)
         if type(content) is dict:
             n = len(content)  # number of connections
-            # mpd_conn = None  # (idx, duration) of the connection fetching the MPD
-            # video_content = None  # connection / dict of connections carrying the video traffic
-            # get_values = None  # function to retrieve aggregate values for the video session
-            # m = None  # True if MPTCP, False if TCP
-            # nb_flows = None  # number of flows (= number of links in use)
             total_MB = None  # total video traffic (MB)
             print('content has {} entries'.format(n))
 
-            if n == 2:  # MPD connection (idx 1) + video connection (idx 2)
-                mpd_conn = (1, '?')
-                video_content = content[n]
+            if n == 2:  # MPD connection (less bytes) + video connection (more bytes)
+                if all(type(e) is tcp.TCPConnection for e in content.values()):
+                    if content[2].flow.attr[co.S2C][co.BYTES] > content[1].flow.attr[co.S2C][co.BYTES]:
+                        mpd_conn = (1, '?')
+                        video_content = content[2]
+                    else:
+                        mpd_conn = (2, '?')
+                        video_content = content[1]
+                elif all(type(e) is mptcp.MPTCPConnection for e in content.values()):
+                    if content[2].attr[co.S2C][co.BYTES_MPTCPTRACE] > content[1].attr[co.S2C][co.BYTES_MPTCPTRACE]:
+                        mpd_conn = (1, '?')
+                        video_content = content[2]
+                    else:
+                        mpd_conn = (2, '?')
+                        video_content = content[1]
+                else:
+                    raise ValueError('{} connections'.format(n))
                 get_values = values_per_flows
             elif n > 2:  # MPD connection (idx to be found) + many video connections (all other idxs)
-                mpd_conn = find_max_duration_connection(content)
+                mpd_conn = find_max_attr_connection(content)
                 video_content = dict(content)  # copy the original
                 del video_content[mpd_conn[0]]  # delete mpd connection
                 print('video_content has {} entries'.format(len(video_content)))
@@ -194,23 +199,14 @@ def main(infile, total_bandwidth, ratio, delays):
                         H_MS: delays,
                         H_SEG_PERF: [''] * nb_flows,
 
-                        # whole connection
-                        # 'S2C bytes mptcptrace': ([None] * n).append(content[2].attr[co.S2C][co.BYTES_MPTCPTRACE]),
-                        # 'S2C retrans_dss': ([None] * n).append(content[2].attr[co.S2C][co.RETRANS_DSS]),
-                        # 'S2C reinj_bytes': ([None] * n).append(content[2].attr[co.S2C][co.REINJ_BYTES]),
-                        # 'S2C reinj_pc': ([None] * n).append(content[2].attr[co.S2C][co.REINJ_PC]),
-
                     }, index=[range(1, nb_flows + 1)])
 
-            # print('\n* Data from', os.path.basename(infile), ':\n', line, '\n', data, '\n', line, '\n')
-            # print('the end')
-            # TODO header=False
-            # TODO formatters='TODO same len as columns'
-            # LaTeX
+            # columns = [H_LINK, H_RATIO, H_MBPS, H_MS,
+            #            H_TRAFFIC_MB, H_UNIQUE_TRAFFIC_MB, H_RETRANS_MB, H_REINJ_MB, H_TRAFFIC_PERC,
+            #            H_RETRANS_PKTS, H_REINJ_PKTS, H_RTO_PKTS, H_UNNEC_RTO_PKTS, H_SEG_PERF]
             columns = [H_LINK, H_RATIO, H_MBPS, H_MS,
-                       H_TRAFFIC_MB, H_UNIQUE_TRAFFIC_MB, H_RETRANS_MB, H_REINJ_MB, H_TRAFFIC_PERC,
-                       H_RETRANS_PKTS, H_REINJ_PKTS, H_RTO_PKTS, H_UNNEC_RTO_PKTS, H_SEG_PERF]
-            column_format = 'lSSSSSSSSSSSSc'
+                       H_TRAFFIC_PERC, H_RETRANS_PKTS, H_RTO_PKTS, H_UNNEC_RTO_PKTS, H_REINJ_PKTS]
+            column_format = 'lSSSSSSSS'
             assert len(columns) == len(column_format)
             latex = data.to_latex(columns=columns, column_format=column_format, col_space=None,
                                   header=True, index=False, index_names=False, bold_rows=False,
@@ -218,6 +214,7 @@ def main(infile, total_bandwidth, ratio, delays):
                                   longtable=None, escape=True, encoding='utf-8',
                                   na_rep='NaN', decimal='.')
 
+            # LaTeX to console
             print(line)
             print(latex)
             print(line)
